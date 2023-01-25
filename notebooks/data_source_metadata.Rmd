@@ -1,0 +1,114 @@
+---
+title: "Data Sources"
+author: "Kodie McNamara"
+date: 'December 1, 2022'
+output: html_document
+knit: (function(input, ...) {
+    rmarkdown::render(
+      input,
+      output_dir = "../output",
+      output_file = "Data Source Metadata.html"
+    )
+  })
+---
+
+The purpose of this document is to explore various data sources in regards to setting up analysis within sports betting. The focus of the given sources here is NFL betting, which is aimed to be expanded in future iterations. Thus, expandability and generalization of the data is considered when determining preferences of courses.
+
+```{r setup, echo=FALSE, include=FALSE, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(readxl)
+library(kableExtra)
+```
+
+
+
+## Sportsbook Reviews
+
+```{r echo=FALSE}
+t(
+  data.frame(
+    "Link" = "https://www.sportsbookreviewsonline.com/scoresoddsarchives/nfl/nfloddsarchives.htm",
+    "Data Format" = "xlsx",
+    "Sports" = "NFL, NCAA, NHL, NBA",
+    "Dates" = paste0(2007:2022, collapse = ", "),
+    check.names = FALSE
+  )
+) %>% 
+  as.data.frame() %>% 
+  rownames_to_column() %>% 
+  rename("Field" = "rowname",
+         "Value" = "V1") %>% 
+  as.data.frame() %>% 
+  kable(align = c("r","l"), col.names = NULL) %>% 
+  kable_styling()%>%
+  column_spec(column = 1,bold=T,border_right = T)
+```
+
+### Initial Notes
+
+Here we view a sample dataset from the site
+```{r}
+sbr_data = read_xlsx(path = "../data/raw/Sportsbook Review nfl odds 2007-08.xlsx") %>% 
+  as.data.frame()
+```
+
+```{r echo=FALSE}
+kable(
+  data.frame(
+    "Column" = names(sbr_data),
+    "Type" = unname(unlist(sapply(sbr_data, function(x) paste0(class(x), collapse = ", ")))),
+    "Values" = unname(unlist(sapply(sbr_data, function(x) paste0(x[1:5], collapse = ", "))))
+  )
+) %>%
+  kable_styling("striped", full_width = F) %>%
+  scroll_box(width = "100%", height = "500px")
+```
+
+While a decent-looking choice, the data is not in the cleanest format. Columns like `Rot` are difficult to discern without metadata, which there is none. Teams are not encoded, although hopefully do not change over the years (teams changing cities?). Finally, games are not tied to one another. While I can see how an individually team did, it is difficult to discern who they played, although `Rot` may provide insight. Initial analysis shows that it is an odd number Rot vs the sequentially next even number Rot. However, some of the Rot are not unique
+
+
+## Australia Sports Betting
+
+```{r echo=FALSE}
+t(
+  data.frame(
+    "Link" = "https://www.aussportsbetting.com/data/historical-nfl-results-and-odds-data/",
+    "Data Format" = "xlsx",
+    "Sports" = "NFL, NBA, Soccer",
+    "Dates" = paste0(2006:2022, collapse = ", "),
+    check.names = FALSE
+  )
+) %>% 
+  as.data.frame() %>% 
+  rownames_to_column() %>% 
+  rename("Field" = "rowname",
+         "Value" = "V1") %>% 
+  as.data.frame() %>% 
+  kable(align = c("r","l"), col.names = NULL) %>% 
+  kable_styling()%>%
+  column_spec(column = 1,bold=T,border_right = T)
+```
+
+### Initial Notes
+
+Here we view a sample dataset from the site
+```{r warning=FALSE}
+aus_data = read_xlsx(path = "../data/raw/AUS Sports Betting NFL Betting Data.xlsx") %>%
+  as.data.frame()
+```
+
+```{r echo=FALSE}
+kable(
+  data.frame(
+    "Column" = names(aus_data),
+    "Type" = unname(unlist(sapply(aus_data, function(x) paste0(class(x), collapse = ", ")))),
+    "Values" = unname(unlist(sapply(aus_data, function(x) paste0(x[1:5], collapse = ", "))))
+  )
+) %>%
+  kable_styling("striped", full_width = F) %>%
+  scroll_box(width = "100%", height = "500px")
+```
+
+This data seems to provide nearly everything we would need when considering building a model. One thing we would like to have here is the week, although that may be abel to be coerced later
+
+

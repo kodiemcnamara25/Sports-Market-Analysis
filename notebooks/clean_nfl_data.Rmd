@@ -1,0 +1,278 @@
+---
+title: "Clean AUS Football Data"
+author: "Kodie McNamara"
+date: "`r paste0('Last Updated: ', format(Sys.time(), '%d %B, %Y'))`"
+output: html_document
+knit: (function(input, ...) {
+    rmarkdown::render(
+      input,
+      output_dir = "../output",
+      output_file = "Clean NFL Data.html"
+    )
+  })
+---
+
+```{r setup, echo=FALSE, include=FALSE, warning=FALSE, message=FALSE}
+library(tidyverse)
+library(readxl)
+```
+
+
+## Read in Data
+```{r warning=FALSE}
+nfl_data = read_xlsx(path = "../data/raw/AUS Sports Betting NFL Betting Data.xlsx") %>% as.data.frame()
+str(nfl_data)
+```
+
+## Data Types
+
+We transform certain columns to ensure they are of the correct data type
+
+Each of the three variables are transformed to be categorical `Yes` or `No` values
+
+1. Overtime?
+2. Playoff Game?
+3. Neutral Venue?
+
+
+```{r}
+nfl_data = nfl_data %>% 
+  dplyr::mutate(
+    `Overtime?` = factor(ifelse(is.na(`Overtime?`),"No","Yes")),
+    `Playoff Game?` = factor(ifelse(is.na(`Playoff Game?`),"No","Yes")),
+    `Neutral Venue?` = factor(ifelse(is.na(`Neutral Venue?`),"No","Yes"))
+  )
+```
+
+
+## Convert NFL Teams
+
+Full team names is less-than-deal. While the names won't be used in prediction, a three-letter identifier is more ideal. In addition, we would like to parse out the location of the given team.
+
+```{r}
+unique(c(nfl_data$`Home Team`, nfl_data$`Away Team`))
+```
+
+First, we parse out location of the game, since we can later on tie in things like region, weather, etc. for relevant predictor variables
+```{r}
+nfl_data$`Game Location` = sapply(
+  nfl_data$`Home Team`,
+  function(x){
+    if(x=="Washington Football Team"){
+      return("Washington")
+    }
+    return(
+      paste0(head(strsplit(x," ")[[1]],-1), collapse = " ")
+    )
+  })
+
+unique(nfl_data$`Game Location`)
+```
+
+
+With 37 teams, we provide a mapping from each team to a three-letter abbreviation, where we take historical team names and map them to current teams.
+```{r}
+map_name_to_abb = c("Indianapolis Colts" = "IND", 
+                    "Philadelphia Eagles" = "PHI", 
+                    "Kansas City Chiefs" = "KC", 
+                    "San Francisco 49ers" = "SF", 
+                    "Arizona Cardinals" = "ARZ", 
+                    "Seattle Seahawks" = "SEA", 
+                    "Carolina Panthers" = "CAR", 
+                    "Cleveland Browns" = "CLE", 
+                    "Jacksonville Jaguars" = "JAX", 
+                    "Miami Dolphins" = "MIA", 
+                    "New York Jets" = "NYJ", 
+                    "Tennessee Titans" = "TEN", 
+                    "Washington Commanders" = "WAS", 
+                    "Minnesota Vikings" = "MIN", 
+                    "Dallas Cowboys" = "DAL",
+                    "Detroit Lions" = "DET", 
+                    "Los Angeles Chargers" = "LAC", 
+                    "Pittsburgh Steelers" = "PIT", 
+                    "Denver Broncos" = "DEN", 
+                    "Atlanta Falcons" = "ATL", 
+                    "Baltimore Ravens" = "BAL", 
+                    "Buffalo Bills" = "BUF", 
+                    "Houston Texans" = "HOU", 
+                    "New England Patriots" = "NE", 
+                    "New Orleans Saints" = "NO", 
+                    "New York Giants" = "NYG", 
+                    "Green Bay Packers" = "GB", 
+                    "Los Angeles Rams" = "LAR", 
+                    "Las Vegas Raiders" = "LV", 
+                    "Chicago Bears"= "CHI", 
+                    "Tampa Bay Buccaneers" = "TB", 
+                    "Cincinnati Bengals" = "CIN",
+                    "Washington Football Team" = "WAS", 
+                    "Washington Redskins" = "WAS", 
+                    "Oakland Raiders" = "LV", 
+                    "San Diego Chargers" = "LAC", 
+                    "St. Louis Rams" = "LAR")
+
+nfl_data$`Home Team` = map_name_to_abb[nfl_data$`Home Team`]
+nfl_data$`Away Team` = map_name_to_abb[nfl_data$`Away Team`]
+
+unique(c(nfl_data$`Home Team`, nfl_data$`Away Team`))
+```
+
+## Feature Creation
+
+### Covering the Spread & Over/Under
+
+The first feature to create is understanding if the home/away team covered the spread
+```{r}
+nfl_data$`Home Covered?` = (nfl_data$`Home Score` - nfl_data$`Away Score`) > nfl_data$`Home Line Close`
+nfl_data$`Away Covered?` = (nfl_data$`Away Score` - nfl_data$`Home Score`) > nfl_data$`Away Line Close`
+```
+
+
+Next, we determine if the total score was over or under
+```{r}
+nfl_data$`Total Score Outcome` = ifelse((nfl_data$`Home Score` + nfl_data$`Away Score`) > nfl_data$`Total Score Close`,
+                                        "Over",
+                                        ifelse((nfl_data$`Home Score` + nfl_data$`Away Score`) < nfl_data$`Total Score Close`,
+                                        "Under", 
+                                        "Push"))
+```
+
+### Convert Decimal Odds to American Odds
+
+We utilize the following conversion:
+
+Let $\Omega_A = \text{American Odds}$ and $\Omega_D = \text{Decimal Odds}$. Then, we know
+$$
+\Omega_A = 
+\left\{
+\begin{array}{ll}
+       \frac{-100}{\Omega_D-1} &  \Omega_D < 2 \\
+       100 \times(\Omega_D - 1) & \Omega_D \geq 2 \\
+\end{array} 
+\right.
+$$
+
+Using this formula, we convert our decimal odd variables
+```{r}
+convert_decimal_to_american = function(x){
+  return(
+    round(ifelse(x<2, -100/(x-1), 100*(x-1)))
+  )
+}
+
+variables_to_convert_odds_to_us = c(
+  "Home Odds Open", "Home Odds Min", "Home Odds Max", "Home Odds Close", 
+  "Away Odds Open", "Away Odds Min", "Away Odds Max", "Away Odds Close", 
+  "Home Line Odds Open", "Home Line Odds Min", "Home Line Odds Max", 
+  "Home Line Odds Close", "Away Line Odds Open", "Away Line Odds Min", 
+  "Away Line Odds Max", "Away Line Odds Close")
+
+for(var in variables_to_convert_odds_to_us){
+  nfl_data[[var]] = convert_decimal_to_american(nfl_data[[var]])
+}
+
+rm(convert_decimal_to_american, variables_to_convert_odds_to_us,var)
+```
+
+
+### Line and Odds Movement
+
+Next, define how much the line moved to determine if the crowd has any influence on the outcome
+```{r}
+nfl_data$`Home Line Movement` = nfl_data$`Home Line Close` - nfl_data$`Home Line Open` 
+nfl_data$`Away Line Movement` = nfl_data$`Away Line Close` - nfl_data$`Away Line Open` 
+```
+
+Define how much the odds moved to determine if the crowd has any influence on the outcome
+```{r}
+nfl_data$`Home Odds Movement` = nfl_data$`Home Odds Close` - nfl_data$`Home Odds Open` 
+nfl_data$`Away Odds Movement` = nfl_data$`Away Odds Close` - nfl_data$`Away Odds Open` 
+```
+
+### Date Variables
+
+First, let's add a year, week, and day variable, which will not be used as a predictor
+```{r}
+nfl_data$`Day` = weekdays(nfl_data$Date)
+nfl_data$Week = format(nfl_data$Date, "%V")
+nfl_data$Year = format(nfl_data$Date, "%Y")
+```
+
+
+Next, we format the weeks. In particular:  
+
+- Push Monday games back to the previous week, so we can account for them all in the same week
+```{r}
+nfl_data$Week = ifelse(nfl_data$Day=="Monday", as.numeric(nfl_data$Week)-1,nfl_data$Week)
+```
+
+Afterward, we format the years. In particular:
+
+- Anything after Jan. 1, but before the next season (typically the beginning of September) belongs to the previous season
+
+```{r}
+nfl_data$Year = ifelse(nfl_data$Week < 26, as.numeric(nfl_data$Year) - 1, nfl_data$Year)
+```
+
+
+And finally since the years are correctly formatted, we can now
+
+- Normalize each year so the first week is week 1 and not the calendar week
+```{r}
+nfl_data2 = nfl_data %>%
+  mutate(Week = as.numeric(Week)) %>% 
+  group_by(Year) %>% 
+  mutate(Week = ifelse(Week - min(Week[Week>26]) < 0,
+                       Week - min(Week[Week>26]) + max(Week),
+                       Week - min(Week[Week>26]))) %>% 
+  ungroup() %>% 
+  mutate(Week = Week + 1)
+```
+
+
+
+### Primetime
+We know all games played on Monday and Thursday are primetime, so let's identify that.
+```{r}
+nfl_data$`Primtetime?` = ifelse(is.element(nfl_data$Day,c("Thursday","Monday")), "Yes", "No")
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
